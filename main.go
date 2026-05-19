@@ -62,7 +62,6 @@ var (
 
 const (
 	roaURL          = "https://hosted-routinator.rarc.net/json"
-	projectID       = "historical-roas"
 	projectLocation = "us-east4"
 )
 
@@ -78,7 +77,7 @@ func main() {
 
 	// open bigquery connection
 	var err error
-	client, err = bigquery.NewClient(context.Background(), projectID)
+	client, err = bigquery.NewClient(context.Background(), bigquery.DetectProjectID)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -455,8 +454,8 @@ func downloadRARC() (*inputROAArr, error) {
 	return &form, nil
 }
 
-//ErrorHandler is a function to handle HTTP errors
-//copied from imgsrvr, slightly different formatting
+// ErrorHandler is a function to handle HTTP errors
+// copied from imgsrvr, slightly different formatting
 func ErrorHandler(resp http.ResponseWriter, req *http.Request, status int, alert string, err error) {
 	log.Errorln(err)
 	resp.WriteHeader(status)
