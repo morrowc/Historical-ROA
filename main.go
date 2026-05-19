@@ -170,19 +170,8 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 			Value: inputStore.Subnet,
 		},
 	}
-	job, err := query.Run(ctx)
-	if err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
-		return
-	}
 
-	status, _ := job.Wait(ctx)
-	if err := status.Err(); err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
-		return
-	}
-
-	it, err := job.Read(ctx)
+	it, err := query.Read(ctx)
 	if err != nil {
 		ErrorHandler(w, r, 500, "Error with query", err)
 		return
