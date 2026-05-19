@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -57,23 +56,8 @@ type storedROAWithTime struct {
 	Times     []time.Time
 }
 
-// google cloud credentials file
-type Creds struct {
-	AuthProviderX509CertURL string `json:"auth_provider_x509_cert_url"`
-	AuthURI                 string `json:"auth_uri"`
-	ClientEmail             string `json:"client_email"`
-	ClientID                string `json:"client_id"`
-	ClientX509CertURL       string `json:"client_x509_cert_url"`
-	PrivateKey              string `json:"private_key"`
-	PrivateKeyID            string `json:"private_key_id"`
-	ProjectID               string `json:"project_id"`
-	TokenURI                string `json:"token_uri"`
-	Type                    string `json:"type"`
-}
-
 var (
 	client *bigquery.Client
-	gcreds Creds
 )
 
 const (
@@ -92,22 +76,9 @@ func main() {
 		log.Tracef("using default port: %v", port)
 	}
 
-	gcredsPath := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	if gcredsPath == "" {
-		gcredsPath = "./Historical-ROAs-02210e643954.json"
-	}
-	gc, err := ioutil.ReadFile(gcredsPath)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	err = json.Unmarshal(gc, &gcreds)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
 	// open bigquery connection
-	client, err = bigquery.NewClient(context.Background(), gcreds.ProjectID)
+	var err error
+	client, err = bigquery.NewClient(context.Background(), projectID)
 	if err != nil {
 		log.Fatalln(err)
 	}
