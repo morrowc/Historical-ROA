@@ -146,14 +146,14 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 	var query *bigquery.Query
 	switch {
 	case hasASN && !hasPrefix:
-		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM historical.roas_arr
+		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr
 		WHERE asn = @asn`)
 
 	case !hasASN && hasPrefix:
-		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM historical.roas_arr
+		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr
 		WHERE prefix = @prefix AND mask = @mask`)
 	case hasASN && hasPrefix:
-		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM historical.roas_arr
+		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr
 		WHERE asn = @asn AND prefix = @prefix AND mask = @mask`)
 	}
 	query.Parameters = []bigquery.QueryParameter{
@@ -300,7 +300,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	//query and dump to map
 	var stored = make(map[string]struct{})
 
-	currentQuery := client.Query(`SELECT asn, ta, prefix, mask, maxlen FROM historical.roas_arr`)
+	currentQuery := client.Query(`SELECT asn, ta, prefix, mask, maxlen FROM public-routing-data-backup.historical.roas_arr`)
 	job, err := currentQuery.Run(ctx)
 	if err != nil {
 		ErrorHandler(w, r, 500, "Error with query", err)
