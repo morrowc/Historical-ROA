@@ -1,6 +1,6 @@
 module github.com/gidoBOSSftw5731/Historical-ROA/movefromoldtonew
 
-go 1.21
+go 1.24.0
 
 require (
 	github.com/gidoBOSSftw5731/log v0.0.0-20190718204308-3ae037c6203f
@@ -14,6 +14,6 @@ require (
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/text v0.3.8 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 )
