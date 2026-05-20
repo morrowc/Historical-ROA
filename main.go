@@ -262,11 +262,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(200)
-	fmt.Fprintln(w, "ok")
-	http.Error(w, "can't hijack rw", 200)
-	hj, _ := w.(http.Hijacker)
-	conn, _, _ := hj.Hijack()
-	conn.Close()
+	fmt.Fprintln(w, "Content-type: text/html")
 	log.Debugln("starting update")
 
 	origIn, err := downloadRARC()
@@ -275,8 +271,6 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := context.Background()
-
-	//inserter := client.Dataset("historical").Table("roas_arr").Inserter()
 
 	schema, err := bigquery.InferSchema(storedROAWithTime{})
 	if err != nil {
@@ -393,14 +387,15 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 
 	// now make one plus one equal 2
 	// historical-roas.historical.roas_arr
-	query = client.Query(`MERGE historical.roas_arr arr
-	USING historical.buf b
-	ON 	b.Asn = arr.asn AND arr.maxlen = b.MaxLength
-	AND b.Prefix = arr.prefix AND arr.ta = b.Ta
-	AND b.Subnet = arr.mask
-	WHEN MATCHED THEN
+	query = client.Query(
+		`MERGE historical.roas_arr arr
+ 	 USING historical.buf b
+	    ON 	b.Asn = arr.asn AND arr.maxlen = b.MaxLength
+	   AND b.Prefix = arr.prefix AND arr.ta = b.Ta
+	   AND b.Subnet = arr.mask
+	  WHEN MATCHED THEN
  		UPDATE SET inserttimes = ARRAY_CONCAT(b.times, arr.inserttimes)
-	WHEN NOT MATCHED BY TARGET THEN
+	  WHEN NOT MATCHED BY TARGET THEN
 		INSERT (asn, maxlen, prefix, ta, mask, inserttimes) VALUES (b.Asn, b.MaxLength, b.Prefix, b.Ta, b.Subnet, b.times)`)
 	job, err = query.Run(ctx)
 	if err != nil {
@@ -449,7 +444,7 @@ func ErrorHandler(resp http.ResponseWriter, req *http.Request, status int, alert
 	log.Errorln(err)
 	resp.WriteHeader(status)
 	log.Error("artifical http error: ", status, alert)
-	fmt.Fprintf(resp, "You have found an error! This error is of type %v. Built in alert: \n'%v',\n Would you like a <a href='https://http.cat/%v'>cat</a> or a <a href='https://httpstatusdogs.com/%v'>dog?</a>",
+	fmt.Fprintf(resp, "<html><title>Error!</title><body>You have found an error! This error is of type %v. Built in alert: \n'%v',\n Would you like a <a href='https://http.cat/%v'>cat</a> or a <a href='https://httpstatusdogs.com/%v'>dog?</a></body></html>",
 		status, alert, status, status)
 }
 
