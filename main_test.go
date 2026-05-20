@@ -38,9 +38,15 @@ func TestPullToDB_MissingCronHeader(t *testing.T) {
 		t.Errorf("Expected status %v, got %v", http.StatusForbidden, rec.Code)
 	}
 
+	contentType := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/plain") {
+		t.Errorf("Expected Content-Type to start with 'text/plain', got %q", contentType)
+	}
+
 	body := rec.Body.String()
-	if !strings.Contains(body, "Forbidden") {
-		t.Errorf("Expected body to contain 'Forbidden', got %q", body)
+	expectedBody := "Error 403: Forbidden: missing X-Appengine-Cron header\n"
+	if body != expectedBody {
+		t.Errorf("Expected body %q, got %q", expectedBody, body)
 	}
 }
 
@@ -55,3 +61,24 @@ func TestPullToDB_WrongCronHeader(t *testing.T) {
 		t.Errorf("Expected status %v, got %v", http.StatusForbidden, rec.Code)
 	}
 }
+
+func TestTextErrorHandler(t *testing.T) {
+	rec := httptest.NewRecorder()
+	TextErrorHandler(rec, http.StatusBadRequest, "Bad Request occurred", fmt.Errorf("some detail"))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %v, got %v", http.StatusBadRequest, rec.Code)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/plain") {
+		t.Errorf("Expected Content-Type to start with 'text/plain', got %q", contentType)
+	}
+
+	body := rec.Body.String()
+	expectedBody := "Error 400: Bad Request occurred: some detail\n"
+	if body != expectedBody {
+		t.Errorf("Expected body %q, got %q", expectedBody, body)
+	}
+}
+

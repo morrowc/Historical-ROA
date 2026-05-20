@@ -244,42 +244,37 @@ func convInToStored(i inputROA) storedROA {
 
 func pullToDB(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-Appengine-Cron") != "true" {
-		ErrorHandler(w, r, http.StatusForbidden, "Forbidden", fmt.Errorf("missing X-Appengine-Cron header"))
+		TextErrorHandler(w, http.StatusForbidden, "Forbidden: missing X-Appengine-Cron header", nil)
 		return
 	}
 
-	// see if there has been an update within 55 mins
-	query := client.Query("SELECT LAST_MODIFIED_TIME FROM INFORMATION_SCHEMA.SCHEMATA")
-	row, _ := query.Read(context.Background())
-	var time_row []bigquery.Value
-	err := row.Next(&time_row)
-	switch err {
-	case nil:
-		lastIn := time_row[0].(time.Time)
+	// see if there has been an update within 50 mins by checking table metadata
+	meta, err := client.Dataset("historical").Table("roas_arr").Metadata(context.Background())
+	if err != nil {
+		log.Errorln("Cant get last edit time (table metadata): ", err)
+	} else {
+		lastIn := meta.LastModifiedTime
 		if lastIn.Add(50 * time.Minute).After(time.Now()) {
 			log.Traceln("Record added in last 50 mins")
-			ErrorHandler(w, r, 401, "already done", nil)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "Skipped: already updated in last 50 mins")
 			return
 		}
-	default:
-		//ErrorHandler(w, r, 500, "Cant get last edit time", err)
-		log.Errorln("Cant get last edit time")
 	}
 
-	w.WriteHeader(200)
-	fmt.Fprintln(w, "Content-type: text/html")
 	log.Debugln("starting update")
 
 	origIn, err := downloadRARC()
 	if err != nil {
-		ErrorHandler(w, r, 500, "Error parsing JSON", err)
+		TextErrorHandler(w, 500, "Error parsing JSON", err)
 		return
 	}
 	ctx := context.Background()
 
 	schema, err := bigquery.InferSchema(storedROAWithTime{})
 	if err != nil {
-		ErrorHandler(w, r, 500, "failed to infer schema", err)
+		TextErrorHandler(w, 500, "failed to infer schema", err)
 		return
 	}
 
@@ -291,19 +286,19 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	currentQuery := client.Query(`SELECT asn, ta, prefix, mask, maxlen FROM public-routing-data-backup.historical.roas_arr`)
 	job, err := currentQuery.Run(ctx)
 	if err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
+		TextErrorHandler(w, 500, "Error running query", err)
 		return
 	}
 
 	status, _ := job.Wait(ctx)
 	if err := status.Err(); err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
+		TextErrorHandler(w, 500, "Error waiting for query job", err)
 		return
 	}
 
 	it, err := job.Read(ctx)
 	if err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
+		TextErrorHandler(w, 500, "Error reading query results", err)
 		return
 	}
 
@@ -314,8 +309,8 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if err != nil {
-			ErrorHandler(w, r, 500, "Error with query", err)
-			continue
+			TextErrorHandler(w, 500, "Error iterating query results", err)
+			return
 		}
 
 		stored[xhashes.MD5(fmt.Sprint(pb.ResultsFromDB{
@@ -363,7 +358,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	err = client.Dataset("historical").Table("buf").Create(ctx,
 		&bigquery.TableMetadata{Schema: schema})
 	if err != nil {
-		ErrorHandler(w, r, 500, "error creating buf", err)
+		TextErrorHandler(w, 500, "error creating buf table", err)
 		return
 	}
 
@@ -385,14 +380,14 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		}
 		err = tmpinserter.Put(ctx, i)
 		if err != nil {
-			ErrorHandler(w, r, 500, "error putting updates", err)
-			continue
+			TextErrorHandler(w, 500, "error putting updates into buf", err)
+			return
 		}
 	}
 
 	// now make one plus one equal 2
 	// historical-roas.historical.roas_arr
-	query = client.Query(
+	query := client.Query(
 		`MERGE historical.roas_arr arr
  	 USING historical.buf b
 	    ON 	b.Asn = arr.asn AND arr.maxlen = b.MaxLength
@@ -400,26 +395,29 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	   AND b.Subnet = arr.mask
 	  WHEN MATCHED THEN
  		UPDATE SET inserttimes = ARRAY_CONCAT(b.times, arr.inserttimes)
-	  WHEN NOT MATCHED BY TARGET THEN
+ 	  WHEN NOT MATCHED BY TARGET THEN
 		INSERT (asn, maxlen, prefix, ta, mask, inserttimes) VALUES (b.Asn, b.MaxLength, b.Prefix, b.Ta, b.Subnet, b.times)`)
 	job, err = query.Run(ctx)
 	if err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
+		TextErrorHandler(w, 500, "Error running MERGE query", err)
+		return
 	}
 	status, _ = job.Wait(ctx)
 	if err := status.Err(); err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
+		TextErrorHandler(w, 500, "Error waiting for MERGE job", err)
 		return
 	}
 
 	_, err = job.Read(ctx)
 	if err != nil {
-		ErrorHandler(w, r, 500, "Error with query", err)
+		TextErrorHandler(w, 500, "Error reading MERGE results", err)
 		return
 	}
 
 	log.Debugln("done updating")
-
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, "Update successful")
 }
 
 func downloadRARC() (*inputROAArr, error) {
@@ -455,6 +453,20 @@ func ErrorHandler(resp http.ResponseWriter, req *http.Request, status int, alert
 	fmt.Fprintf(resp, "<html><title>Error!</title><body>You have found an error! This error is of type %v. Built in alert: \n'%v',\n Would you like a <a href='https://http.cat/%v'>cat</a> or a <a href='https://httpstatusdogs.com/%v'>dog?</a></body></html>",
 		status, html.EscapeString(alert), status, status)
 }
+
+// TextErrorHandler handles HTTP errors for machine callers by returning plain text.
+func TextErrorHandler(w http.ResponseWriter, status int, alert string, err error) {
+	log.Errorln(err)
+	log.Error("artifical http error: ", status, alert)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(status)
+	if err != nil {
+		fmt.Fprintf(w, "Error %d: %s: %v\n", status, alert, err)
+	} else {
+		fmt.Fprintf(w, "Error %d: %s\n", status, alert)
+	}
+}
+
 
 /*
 ; modified to save storage
