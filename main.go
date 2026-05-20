@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
 	"net"
 	"net/http"
@@ -242,6 +243,10 @@ func convInToStored(i inputROA) storedROA {
 }
 
 func pullToDB(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Appengine-Cron") != "true" {
+		ErrorHandler(w, r, http.StatusForbidden, "Forbidden", fmt.Errorf("missing X-Appengine-Cron header"))
+		return
+	}
 
 	// see if there has been an update within 55 mins
 	query := client.Query("SELECT LAST_MODIFIED_TIME FROM INFORMATION_SCHEMA.SCHEMATA")
@@ -420,7 +425,10 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 func downloadRARC() (*inputROAArr, error) {
 	var form inputROAArr
 
-	resp, err := http.Get(roaURL)
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Get(roaURL)
 	if err != nil {
 		return &form, err
 	}
@@ -445,7 +453,7 @@ func ErrorHandler(resp http.ResponseWriter, req *http.Request, status int, alert
 	resp.WriteHeader(status)
 	log.Error("artifical http error: ", status, alert)
 	fmt.Fprintf(resp, "<html><title>Error!</title><body>You have found an error! This error is of type %v. Built in alert: \n'%v',\n Would you like a <a href='https://http.cat/%v'>cat</a> or a <a href='https://httpstatusdogs.com/%v'>dog?</a></body></html>",
-		status, alert, status, status)
+		status, html.EscapeString(alert), status, status)
 }
 
 /*
