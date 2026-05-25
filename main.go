@@ -243,8 +243,8 @@ func convInToStored(i inputROA) storedROA {
 }
 
 func pullToDB(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Appengine-Cron") != "true" {
-		TextErrorHandler(w, http.StatusForbidden, "Forbidden: missing X-Appengine-Cron header", nil)
+	if r.Header.Get("X-Appengine-Cron") != "true" && r.Header.Get("X-CloudScheduler") != "true" {
+		TextErrorHandler(w, http.StatusForbidden, "Forbidden: missing X-Appengine-Cron or X-CloudScheduler header", nil)
 		return
 	}
 
