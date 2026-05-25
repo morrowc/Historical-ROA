@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"html/template"
@@ -19,6 +20,7 @@ import (
 	"cloud.google.com/go/bigquery"
 	pb "github.com/gidoBOSSftw5731/Historical-ROA/proto"
 	"github.com/gidoBOSSftw5731/log"
+	"google.golang.org/api/idtoken"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -242,10 +244,60 @@ func convInToStored(i inputROA) storedROA {
 	}
 }
 
+func verifyOIDCToken(ctx context.Context, r *http.Request) error {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return errors.New("missing Authorization header")
+	}
+
+	parts := strings.Split(authHeader, " ")
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		return errors.New("invalid Authorization header format")
+	}
+	token := parts[1]
+
+	expectedAudience := os.Getenv("SCHEDULE_AUDIENCE")
+	if expectedAudience == "" {
+		expectedAudience = "https://" + r.Host + r.URL.Path
+	}
+
+	expectedSA := os.Getenv("SCHEDULE_SERVICE_ACCOUNT")
+	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
+
+	payload, err := idtoken.Validate(ctx, token, expectedAudience)
+	if err != nil {
+		return fmt.Errorf("token validation failed: %w", err)
+	}
+
+	email, ok := payload.Claims["email"].(string)
+	if !ok {
+		return errors.New("email claim missing in token")
+	}
+
+	if expectedSA != "" {
+		if email != expectedSA {
+			return fmt.Errorf("unauthorized service account: %s (expected %s)", email, expectedSA)
+		}
+	} else if projectID != "" {
+		allowedSuffix := "@" + projectID + ".iam.gserviceaccount.com"
+		if !strings.HasSuffix(email, allowedSuffix) {
+			return fmt.Errorf("service account %s does not belong to project %s", email, projectID)
+		}
+	} else {
+		return errors.New("neither SCHEDULE_SERVICE_ACCOUNT nor GOOGLE_CLOUD_PROJECT is set to verify caller identity")
+	}
+
+	return nil
+}
+
 func pullToDB(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Appengine-Cron") != "true" && r.Header.Get("X-CloudScheduler") != "true" {
-		TextErrorHandler(w, http.StatusForbidden, "Forbidden: missing X-Appengine-Cron or X-CloudScheduler header", nil)
-		return
+	if r.Header.Get("X-Appengine-Cron") == "true" {
+		// Trusted GAE Cron
+	} else {
+		if err := verifyOIDCToken(r.Context(), r); err != nil {
+			TextErrorHandler(w, http.StatusForbidden, "Forbidden: OIDC verification failed", err)
+			return
+		}
 	}
 
 	// See if there has been an update within 50 mins by checking table metadata

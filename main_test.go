@@ -44,7 +44,7 @@ func TestPullToDB_MissingCronHeader(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	expectedBody := "Error 403: Forbidden: missing X-Appengine-Cron or X-CloudScheduler header\n"
+	expectedBody := "Error 403: Forbidden: OIDC verification failed: missing Authorization header\n"
 	if body != expectedBody {
 		t.Errorf("Expected body %q, got %q", expectedBody, body)
 	}
