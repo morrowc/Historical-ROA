@@ -64,8 +64,7 @@ var (
 )
 
 const (
-	// roaURL          = "https://hosted-routinator.rarc.net/json"
-	roaURL          = "https://docs.as701.net/ip.php"
+	roaURL          = "https://hosted-routinator.rarc.net/json"
 	projectLocation = "us-east4"
 )
 
