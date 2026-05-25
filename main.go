@@ -345,9 +345,13 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, _ := job.Wait(ctx)
-	if err := status.Err(); err != nil {
+	status, err := job.Wait(ctx)
+	if err != nil {
 		TextErrorHandler(w, 500, "Error waiting for query job", err)
+		return
+	}
+	if err := status.Err(); err != nil {
+		TextErrorHandler(w, 500, "Query job failed", err)
 		return
 	}
 
@@ -457,9 +461,13 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		TextErrorHandler(w, 500, "Error running MERGE query", err)
 		return
 	}
-	status, _ = job.Wait(ctx)
-	if err := status.Err(); err != nil {
+	status, err = job.Wait(ctx)
+	if err != nil {
 		TextErrorHandler(w, 500, "Error waiting for MERGE job", err)
+		return
+	}
+	if err := status.Err(); err != nil {
+		TextErrorHandler(w, 500, "MERGE job failed", err)
 		return
 	}
 
