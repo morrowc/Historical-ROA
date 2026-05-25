@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	targetURL = flag.String("target-url", "https://hosted-routinator.rarc.net/json", "The URL to fetch ROA data from")
-	port      = flag.Int("port", 8080, "The port to listen on")
-	timeout   = flag.Duration("timeout", 30*time.Second, "Timeout for fetching data from target URL")
+	targetURL  = flag.String("target-url", "https://hosted-routinator.rarc.net/json", "The URL to fetch ROA data from")
+	listenAddr = flag.String("listen_addr", "127.0.0.1", "Address upon which to listen for connections.")
+	port       = flag.Int("port", 8080, "The port to listen on")
+	timeout    = flag.Duration("timeout", 30*time.Second, "Timeout for fetching data from target URL")
 )
 
 func handleROA(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +59,7 @@ func main() {
 
 	http.HandleFunc("/", handleROA)
 
-	addr := fmt.Sprintf(":%d", *port)
+	addr := fmt.Sprintf("%s:%d", *listenAddr, *port)
 	log.Printf("Starting ROA proxy on %s, proxying to %s", addr, *targetURL)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
