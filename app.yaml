@@ -1,6 +1,5 @@
 runtime: go126
 service: historical-roa
-max_instances: 10
 
 handlers:
 - url: /.*
