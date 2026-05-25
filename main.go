@@ -489,9 +489,23 @@ func downloadRARC() (*inputROAArr, error) {
 	buf.ReadFrom(resp.Body)
 	jsonIn := buf.String()
 
+	if resp.StatusCode != http.StatusOK {
+		previewLen := 500
+		if len(jsonIn) < previewLen {
+			previewLen = len(jsonIn)
+		}
+		bodyPreview := jsonIn[:previewLen]
+		return &form, fmt.Errorf("unexpected HTTP status %d from %s (body preview: %q)", resp.StatusCode, roaURL, bodyPreview)
+	}
+
 	err = json.Unmarshal([]byte(jsonIn), &form)
 	if err != nil {
-		return &form, err
+		previewLen := 500
+		if len(jsonIn) < previewLen {
+			previewLen = len(jsonIn)
+		}
+		bodyPreview := jsonIn[:previewLen]
+		return &form, fmt.Errorf("JSON unmarshal failed: %w (body preview: %q)", err, bodyPreview)
 	}
 
 	return &form, nil
