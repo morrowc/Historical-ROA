@@ -136,7 +136,11 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 		input.Prefix = n.String()
 	}
 
-	inputStore := convInToStored(input)
+	inputStore, err := convInToStored(input)
+	if err != nil {
+		ErrorHandler(w, r, http.StatusBadRequest, "Invalid input prefix", err)
+		return
+	}
 
 	var hasASN, hasPrefix bool
 	if inputStore.Asn != "" {
@@ -228,14 +232,19 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // convert input data into stored data
-func convInToStored(i inputROA) storedROA {
+func convInToStored(i inputROA) (storedROA, error) {
 	// shut up I know its not correct terminology
 	ipandmask := strings.Split(i.Prefix, "/")
 
 	var mask int
-	// probably doesnt need error checking
+	var err error
 	if len(ipandmask) == 2 {
-		mask, _ = strconv.Atoi(ipandmask[1])
+		mask, err = strconv.Atoi(ipandmask[1])
+		if err != nil {
+			return storedROA{}, fmt.Errorf("invalid mask %q: %w", ipandmask[1], err)
+		}
+	} else if i.Prefix != "" {
+		return storedROA{}, fmt.Errorf("invalid prefix format (expected ip/mask): %q", i.Prefix)
 	}
 
 	return storedROA{
@@ -244,7 +253,7 @@ func convInToStored(i inputROA) storedROA {
 		MaxLength: i.MaxLength,
 		Ta:        i.Ta,
 		Subnet:    mask,
-	}
+	}, nil
 }
 
 func verifyOIDCToken(ctx context.Context, r *http.Request) error {
@@ -388,8 +397,15 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		id++
 		// shut up I know its not correct terminology
 		ipandmask := strings.Split(i.Prefix, "/")
-		// probably doesnt need error checking
-		mask, _ := strconv.Atoi(ipandmask[1])
+		if len(ipandmask) != 2 {
+			log.Error("Skipping invalid prefix (missing slash): ", i.Prefix)
+			continue
+		}
+		mask, err := strconv.Atoi(ipandmask[1])
+		if err != nil {
+			log.Error("Skipping invalid prefix (bad mask): ", i.Prefix, " err: ", err)
+			continue
+		}
 
 		/*in = append(in, storedROA{
 			Asn:       i.Asn,
@@ -497,7 +513,10 @@ func downloadRARC() (*inputROAArr, error) {
 	defer resp.Body.Close()
 
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
+	_, err = buf.ReadFrom(resp.Body)
+	if err != nil {
+		return &form, fmt.Errorf("failed to read response body: %w", err)
+	}
 	jsonIn := buf.String()
 
 	if resp.StatusCode != http.StatusOK {
