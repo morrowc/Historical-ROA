@@ -186,7 +186,7 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			ErrorHandler(w, r, 500, "Error with query", err)
-			continue
+			return
 		}
 		var intime []time.Time
 		var buf = row[5].([]bigquery.Value)
