@@ -248,7 +248,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// see if there has been an update within 50 mins by checking table metadata
+	// See if there has been an update within 50 mins by checking table metadata
 	meta, err := client.Dataset("historical").Table("roas_arr").Metadata(context.Background())
 	if err != nil {
 		log.Errorln("Cant get last edit time (table metadata): ", err)
@@ -428,6 +428,7 @@ func downloadRARC() (*inputROAArr, error) {
 	}
 	resp, err := client.Get(roaURL)
 	if err != nil {
+		log.Infof("failed attempting to download %q in downloadRARC, err: %v", roaURL, err)
 		return &form, err
 	}
 	defer resp.Body.Close()
@@ -466,7 +467,6 @@ func TextErrorHandler(w http.ResponseWriter, status int, alert string, err error
 		fmt.Fprintf(w, "Error %d: %s\n", status, alert)
 	}
 }
-
 
 /*
 ; modified to save storage
