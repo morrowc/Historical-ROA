@@ -68,7 +68,7 @@ const (
 	// The above SHOULD work, it does not. Proxy the requests through
 	// an endpoint that we know works properly, external to cloud.
 	roaURL          = "https://docs.as701.net/roa/update/"
-	projectLocation = "us-east4"
+	projectLocation = "us-central2"
 )
 
 func main() {
