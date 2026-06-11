@@ -566,18 +566,19 @@ func TextErrorHandler(w http.ResponseWriter, status int, alert string, err error
 
 /*
 ; modified to save storage
-create table roas_arr (
-	asn text,
-	prefix text,
-	maxlen int,
-	ta text,
-	mask int,
-	inserttimes TIMESTAMP WITHOUT TIME ZONE[]
-);
-create table last_modified (
-	time TIMESTAMP WITHOUT TIME ZONE
-);
-create index idx_as on roas_arr (asn);
-create index idx_prefix_mask on roas_arr (prefix, mask);
-create index idx_prefix_mask_asn on roas_arr (prefix, mask, asn);
+
+DROP TABLE IF EXISTS
+  `public-routing-data-backup`.`historical`.`roas_arr`;
+CREATE TABLE
+  `public-routing-data-backup`.`historical`.`roas_arr`( asn STRING,
+    prefix STRING,
+    maxlen INT64,
+    ta STRING,
+    mask INT64,
+    inserttimes ARRAY<TIMESTAMP>)
+CLUSTER BY
+  prefix,
+  mask,
+  asn;
+
 */
