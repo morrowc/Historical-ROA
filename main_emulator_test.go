@@ -32,7 +32,7 @@ func TestIntegration_Emulator(t *testing.T) {
 
 	// 1. Setup Emulator Dataset and Tables
 	err = client.Dataset("historical").Create(ctx, &bigquery.DatasetMetadata{})
-	if err != nil && !strings.Contains(err.Error(), "Already Exists") {
+	if err != nil && !strings.Contains(err.Error(), "Already Exists") && !strings.Contains(err.Error(), "is already created") {
 		t.Fatalf("failed to create historical dataset: %v", err)
 	}
 
