@@ -64,10 +64,9 @@ var (
 )
 
 const (
-	// roaURL          = "https://hosted-routinator.rarc.net/json"
+	roaURL = "https://hosted-routinator.rarc.net/json"
 	// The above SHOULD work, it does not. Proxy the requests through
 	// an endpoint that we know works properly, external to cloud.
-	roaURL          = "https://docs.as701.net/roa/update/"
 	projectLocation = "us-central2"
 )
 

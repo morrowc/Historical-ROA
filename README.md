@@ -9,8 +9,8 @@ The `historical-roa` service serves two primary functions:
 
 1.  **Data Ingestion & Archival (`/update`)**:
 
-    *   Periodically fetches current ROA data from an external source (default
-        configured to `https://docs.as701.net/roa/update/`).
+    *   Periodically fetches current ROA data from an external source
+        (defaulting to `https://hosted-routinator.rarc.net/json`).
     *   Compares the fetched ROAs with previously stored data in Google Cloud
         BigQuery.
     *   Inserts new records and updates observation timestamps for existing
@@ -36,11 +36,12 @@ The `historical-roa` service serves two primary functions:
 
 ### Helper: `roa_proxy`
 
-The repository also includes a sub-package `roa_proxy`, which is a simple HTTP
-proxy service. It can be used to reliably fetch ROA data from sources that might
-be difficult to access directly from Google Cloud (e.g.,
-`https://hosted-routinator.rarc.net/json`) and make it available to the main
-ingestion endpoint.
+The repository includes a sub-package `roa_proxy`, which is a standalone HTTP
+proxy service. If the primary App Engine application experiences access or
+reliability issues fetching directly from upstream sources (like
+`https://hosted-routinator.rarc.net/json`), `roa_proxy` can be deployed on an
+external cluster to reliably bridge and proxy the JSON data back to Google
+Cloud.
 
 ## Architecture
 
@@ -106,11 +107,28 @@ Platform (GCP) project:
     gcloud app deploy
     ```
 
-4.  **Set up Ingestion Scheduling**: You must configure a scheduler to hit the
-    `https://<your-service-url>/update` endpoint periodically (e.g., hourly).
+4.  **Set up Ingestion Scheduling**: You must configure a periodic job to hit
+    the `https://<your-service-url>/update` endpoint (e.g., every hour).
 
-    *   **Option A: App Engine Cron** (Recommended if purely internal): Create a
-        `cron.yaml` file in the root directory:
+    *   **Google Cloud Scheduler (Recommended)**: Set up a Cloud Scheduler job
+        targeting your `/update` endpoint. Configure the job to use an OIDC
+        token for authentication. You can set the following environment
+        variables in your `app.yaml` to secure the endpoint and restrict which
+        service account can trigger updates:
+
+        *   `SCHEDULE_AUDIENCE`: The audience string (usually your full target
+            URL).
+        *   `SCHEDULE_SERVICE_ACCOUNT`: The exact email of the service account
+            configured in Cloud Scheduler.
+        *   If `SCHEDULE_SERVICE_ACCOUNT` is not set, the application will
+            default to allowing any service account belonging to the same GCP
+            project (verified via the `GOOGLE_CLOUD_PROJECT` environment
+            variable).
+
+    *   **App Engine Cron (Deprecated)**: *Note: App Engine Cron is currently
+        being deprecated in favor of Cloud Scheduler.* If you must maintain
+        legacy deployments, you can create a `cron.yaml` file in the root
+        directory:
 
         ```yaml
         cron:
@@ -120,20 +138,6 @@ Platform (GCP) project:
         ```
 
         And deploy it: `gcloud app deploy cron.yaml`
-
-    *   **Option B: Google Cloud Scheduler** (With OIDC Auth): Set up a Cloud
-        Scheduler job targeting your `/update` endpoint. Configure it to use an
-        OIDC token for authentication. You can set the following environment
-        variables in your `app.yaml` to restrict which service account can
-        trigger it:
-
-        *   `SCHEDULE_AUDIENCE`: The audience string (usually the full target
-            URL).
-        *   `SCHEDULE_SERVICE_ACCOUNT`: The exact email of the service account
-            configured in Cloud Scheduler.
-        *   If `SCHEDULE_SERVICE_ACCOUNT` is not set, it will default to
-            allowing any service account within the same GCP project (verified
-            via the `GOOGLE_CLOUD_PROJECT` environment variable).
 
 ## How to Test
 
@@ -171,8 +175,10 @@ go test -v ./...
         utilization and query costs.
     *   Ensure the clustering on `(prefix, mask, asn)` remains effective for
         your common query patterns.
-*   **External Source Health**: The application relies on
-    `https://docs.as701.net/roa/update/` (or the configured `roaURL`). If this
-    external endpoint fails, the `/update` endpoint will log errors and abort.
-    Monitor for consistent 500 errors from the `/update` endpoint, which may
-    indicate an issue with the upstream ROA data source.
+*   **External Source Health**: The application relies on the configured
+    `roaURL` (`https://hosted-routinator.rarc.net/json`). If this upstream
+    endpoint fails or blocks Google Cloud execution, the `/update` process will
+    abort and log errors. Monitor for consistent 500 errors from `/update`,
+    which indicate an issue with the upstream ROA data source or a network
+    egress failure.
+
