@@ -1,0 +1,31 @@
+name: Run Tests and Upload Coverage
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26'
+
+    - name: Run Tests with Coverage
+      run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.out
+        fail_ci_if_error: false
+        # Note: For public repositories, a token is generally not required,
+        # but adding one is recommended by Codecov for rate limit reliability.
+        # If this is a private repo, you MUST add a secret: ${{ secrets.CODECOV_TOKEN }}
