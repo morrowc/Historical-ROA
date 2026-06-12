@@ -111,7 +111,7 @@ func TestIntegration_Emulator(t *testing.T) {
 	}
 
 	body3 := rec3.Body.String()
-	if !strings.Contains(body3, `"ASN": "AS15169"`) && !strings.Contains(body3, `"asn": "AS15169"`) {
+	if !strings.Contains(body3, "AS15169") || !strings.Contains(body3, "8.8.8.0/24") {
 		t.Errorf("mainPage json did not return expected structure: %s", body3)
 	}
 }
