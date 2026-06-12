@@ -25,6 +25,7 @@ import (
 	"github.com/golang/glog"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -71,7 +72,18 @@ var (
 	// The above SHOULD work, it does not. Proxy the requests through
 	// an endpoint that we know works properly, external to cloud.
 	projectLocation = "us-central2"
+	updateCooldown  = 50 * time.Minute
 )
+
+func initBQClient(ctx context.Context) (*bigquery.Client, error) {
+	if bqHost := os.Getenv("BIGQUERY_EMULATOR_HOST"); bqHost != "" {
+		return bigquery.NewClient(ctx, "public-routing-data-backup",
+			option.WithEndpoint("http://"+bqHost),
+			option.WithoutAuthentication(),
+		)
+	}
+	return bigquery.NewClient(ctx, bigquery.DetectProjectID)
+}
 
 func main() {
 	flag.Parse()
@@ -84,7 +96,7 @@ func main() {
 
 	// open bigquery connection
 	var err error
-	client, err = bigquery.NewClient(context.Background(), bigquery.DetectProjectID)
+	client, err = initBQClient(context.Background())
 	if err != nil {
 		glog.Fatalln(err)
 	}
@@ -500,7 +512,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		glog.Errorln("Cant get last edit time (table metadata): ", err)
 	} else {
 		lastIn := meta.LastModifiedTime
-		if lastIn.Add(50 * time.Minute).After(time.Now()) {
+		if lastIn.Add(updateCooldown).After(time.Now()) {
 			glog.V(2).Infoln("Record added in last 50 mins")
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
