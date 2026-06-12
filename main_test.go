@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"net/http"
@@ -166,5 +167,181 @@ func TestComputeAvailabilityRanges(t *testing.T) {
 		}
 	}
 }
+
+func TestConvInToStored(t *testing.T) {
+	tests := []struct {
+		input    inputROA
+		expected storedROA
+		wantErr  bool
+	}{
+		{
+			input:    inputROA{Asn: "AS15169", Prefix: "8.8.8.0/24", MaxLength: 24, Ta: "arin"},
+			expected: storedROA{Asn: "AS15169", Prefix: "8.8.8.0", MaxLength: 24, Ta: "arin", Subnet: 24},
+			wantErr:  false,
+		},
+		{
+			input:    inputROA{Prefix: "8.8.8.0"},
+			expected: storedROA{},
+			wantErr:  true,
+		},
+		{
+			input:    inputROA{Prefix: "8.8.8.0/invalid"},
+			expected: storedROA{},
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		got, err := convInToStored(tc.input)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("convInToStored(%v) error = %v, wantErr %v", tc.input, err, tc.wantErr)
+			continue
+		}
+		if !tc.wantErr && got != tc.expected {
+			t.Errorf("convInToStored(%v) = %+v, want %+v", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestHSTS(t *testing.T) {
+	// Test HTTP redirection
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://example.com/foo", nil)
+	req.Header.Set("X-Forwarded-Proto", "http")
+
+	hsts(rec, req)
+
+	if rec.Code != http.StatusMovedPermanently {
+		t.Errorf("Expected redirect status %v, got %v", http.StatusMovedPermanently, rec.Code)
+	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=2629800" {
+		t.Errorf("Expected HSTS header, got %q", got)
+	}
+
+	// Test HTTPS passthrough
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("GET", "https://example.com/foo", nil)
+	req2.Header.Set("X-Forwarded-Proto", "https")
+
+	hsts(rec2, req2)
+
+	if rec2.Code == http.StatusMovedPermanently {
+		t.Errorf("Did not expect redirect for HTTPS request")
+	}
+}
+
+func TestDownloadRARC(t *testing.T) {
+	// Test successful download
+	fakeJSON := `{"roas":[{"asn":"AS15169","prefix":"8.8.8.0/24","maxLength":24,"ta":"arin"}]}`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(fakeJSON))
+	}))
+	defer ts.Close()
+
+	// Override roaURL
+	origURL := roaURL
+	roaURL = ts.URL
+	defer func() { roaURL = origURL }()
+
+	res, err := downloadRARC()
+	if err != nil {
+		t.Fatalf("downloadRARC failed: %v", err)
+	}
+	if len(res.Roas) != 1 || res.Roas[0].Asn != "AS15169" {
+		t.Errorf("Unexpected result: %+v", res)
+	}
+
+	// Test 500 error from server
+	tsErr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Server crash"))
+	}))
+	defer tsErr.Close()
+
+	roaURL = tsErr.URL
+	_, err = downloadRARC()
+	if err == nil {
+		t.Errorf("Expected error for 500 response, got nil")
+	}
+
+	// Test invalid JSON
+	tsBadJSON := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("{invalid-json"))
+	}))
+	defer tsBadJSON.Close()
+
+	roaURL = tsBadJSON.URL
+	_, err = downloadRARC()
+	if err == nil {
+		t.Errorf("Expected error for bad JSON, got nil")
+	}
+}
+
+func TestVerifyOIDCToken_Errors(t *testing.T) {
+	ctx := context.Background()
+
+	// Missing header
+	req1 := httptest.NewRequest("GET", "/update", nil)
+	if err := verifyOIDCToken(ctx, req1); err == nil {
+		t.Errorf("Expected error for missing header, got nil")
+	}
+
+	// Invalid header format
+	req2 := httptest.NewRequest("GET", "/update", nil)
+	req2.Header.Set("Authorization", "Basic somedata")
+	if err := verifyOIDCToken(ctx, req2); err == nil {
+		t.Errorf("Expected error for invalid format, got nil")
+	}
+
+	// Invalid token (idtoken.Validate should fail)
+	req3 := httptest.NewRequest("GET", "/update", nil)
+	req3.Header.Set("Authorization", "Bearer fake-invalid-jwt-token")
+	if err := verifyOIDCToken(ctx, req3); err == nil {
+		t.Errorf("Expected error for fake token, got nil")
+	}
+}
+
+func TestMainPage_InitialGet(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+
+	mainPage(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %v", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "Historical ROA Query") {
+		t.Errorf("Response body does not contain expected title")
+	}
+}
+
+func TestMainPage_InvalidCriteria(t *testing.T) {
+	// Test Bad ASN
+	rec1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest("POST", "/?asn=invalid_asn", nil)
+	mainPage(rec1, req1)
+	if rec1.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for bad ASN, got %v", rec1.Code)
+	}
+
+	// Test Bad Prefix
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest("POST", "/?prefix=invalid_prefix", nil)
+	mainPage(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for bad Prefix, got %v", rec2.Code)
+	}
+
+	// Test Missing both criteria
+	rec3 := httptest.NewRecorder()
+	req3 := httptest.NewRequest("POST", "/", nil)
+	mainPage(rec3, req3)
+	if rec3.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for missing criteria, got %v", rec3.Code)
+	}
+}
+
 
 

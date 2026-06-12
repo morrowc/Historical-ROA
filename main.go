@@ -66,7 +66,7 @@ var (
 	client *bigquery.Client
 )
 
-const (
+var (
 	roaURL = "https://hosted-routinator.rarc.net/json"
 	// The above SHOULD work, it does not. Proxy the requests through
 	// an endpoint that we know works properly, external to cloud.
