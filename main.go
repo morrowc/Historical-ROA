@@ -55,12 +55,12 @@ type storedROA struct {
 }
 
 type storedROAWithTime struct {
-	Asn       string `json:"asn"`
-	Prefix    string `json:"prefix"`
-	MaxLength int    `json:"maxLength"`
-	Ta        string `json:"ta"`
-	Subnet    int
-	Times     []time.Time
+	Asn       string      `bigquery:"asn" json:"asn"`
+	Prefix    string      `bigquery:"prefix" json:"prefix"`
+	MaxLength int         `bigquery:"maxlen" json:"maxLength"`
+	Ta        string      `bigquery:"ta" json:"ta"`
+	Subnet    int         `bigquery:"mask"`
+	Times     []time.Time `bigquery:"inserttimes"`
 }
 
 var (
@@ -659,13 +659,13 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	query := client.Query(
 		`MERGE historical.roas_arr arr
  	 USING historical.buf b
-	    ON 	b.Asn = arr.asn AND b.MaxLength = arr.maxlen
-	   AND b.Prefix = arr.prefix AND b.Ta = arr.ta
-	   AND b.Subnet = arr.mask
+	    ON 	b.asn = arr.asn AND b.maxlen = arr.maxlen
+	   AND b.prefix = arr.prefix AND b.ta = arr.ta
+	   AND b.mask = arr.mask
 	  WHEN MATCHED THEN
- 		UPDATE SET inserttimes = ARRAY_CONCAT(b.times, arr.inserttimes)
+ 		UPDATE SET inserttimes = ARRAY_CONCAT(b.inserttimes, arr.inserttimes)
  	  WHEN NOT MATCHED BY TARGET THEN
-		INSERT (asn, maxlen, prefix, ta, mask, inserttimes) VALUES (b.Asn, b.MaxLength, b.Prefix, b.Ta, b.Subnet, b.times)`)
+		INSERT (asn, maxlen, prefix, ta, mask, inserttimes) VALUES (b.asn, b.maxlen, b.prefix, b.ta, b.mask, b.inserttimes)`)
 	job, err = query.Run(ctx)
 	if err != nil {
 		TextErrorHandler(w, 500, "Error running MERGE query", err)
