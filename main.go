@@ -18,9 +18,11 @@ import (
 
 	"github.com/shomali11/util/xhashes"
 
+	"flag"
+
 	"cloud.google.com/go/bigquery"
 	pb "github.com/gidoBOSSftw5731/Historical-ROA/proto"
-	"github.com/gidoBOSSftw5731/log"
+	"github.com/golang/glog"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/api/iterator"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -72,20 +74,19 @@ const (
 )
 
 func main() {
-	// enable logging
-	log.SetCallDepth(2)
+	flag.Parse()
 	// set http port
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8081"
-		log.Tracef("using default port: %v", port)
+		glog.V(2).Infof("using default port: %v", port)
 	}
 
 	// open bigquery connection
 	var err error
 	client, err = bigquery.NewClient(context.Background(), bigquery.DetectProjectID)
 	if err != nil {
-		log.Fatalln(err)
+		glog.Fatalln(err)
 	}
 
 	client.Location = projectLocation
@@ -94,7 +95,7 @@ func main() {
 	http.HandleFunc("/", mainPage)
 	http.HandleFunc("/hsts", hsts)
 	//http.HandleFunc("/aaaaaaaaaaaaaaaa", movefromoldtonew.Main)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
+	glog.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), nil))
 }
 
 func hsts(w http.ResponseWriter, r *http.Request) {
@@ -169,7 +170,7 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 
 	tmpl, err := template.New("index").Parse(indexHTML)
 	if err != nil {
-		log.Errorln(err)
+		glog.Errorln(err)
 		return
 	}
 
@@ -230,7 +231,7 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Traceln(input)
+	glog.V(2).Infoln(input)
 
 	var query *bigquery.Query
 	switch {
@@ -496,11 +497,11 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	// See if there has been an update within 50 mins by checking table metadata
 	meta, err := client.Dataset("historical").Table("roas_arr").Metadata(context.Background())
 	if err != nil {
-		log.Errorln("Cant get last edit time (table metadata): ", err)
+		glog.Errorln("Cant get last edit time (table metadata): ", err)
 	} else {
 		lastIn := meta.LastModifiedTime
 		if lastIn.Add(50 * time.Minute).After(time.Now()) {
-			log.Traceln("Record added in last 50 mins")
+			glog.V(2).Infoln("Record added in last 50 mins")
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprintln(w, "Skipped: already updated in last 50 mins")
@@ -508,7 +509,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Debugln("starting update")
+	glog.V(1).Infoln("starting update")
 
 	origIn, err := downloadRARC()
 	if err != nil {
@@ -579,12 +580,12 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		// shut up I know its not correct terminology
 		ipandmask := strings.Split(i.Prefix, "/")
 		if len(ipandmask) != 2 {
-			log.Error("Skipping invalid prefix (missing slash): ", i.Prefix)
+			glog.Error("Skipping invalid prefix (missing slash): ", i.Prefix)
 			continue
 		}
 		mask, err := strconv.Atoi(ipandmask[1])
 		if err != nil {
-			log.Error("Skipping invalid prefix (bad mask): ", i.Prefix, " err: ", err)
+			glog.Error("Skipping invalid prefix (bad mask): ", i.Prefix, " err: ", err)
 			continue
 		}
 
@@ -598,17 +599,17 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 
 		in = append(in, &storedROAWithTime{i.Asn, ipandmask[0], i.MaxLength, i.Ta, mask, now})
 
-		//go log.Traceln(debug)
+		//go glog.V(2).Infoln(debug)
 		//debug++
 
 	}
 
-	log.Traceln("making buf table")
+	glog.V(2).Infoln("making buf table")
 	// make buf table
 
 	err = client.Dataset("historical").Table("buf").Delete(ctx)
 	if err != nil {
-		log.Errorln("Error Deleting buf: ", err)
+		glog.Errorln("Error Deleting buf: ", err)
 		err = nil
 	}
 	err = client.Dataset("historical").Table("buf").Create(ctx,
@@ -631,7 +632,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, i := range divided {
 		if len(i) == 0 {
-			log.Errorln("Divided array had len 0")
+			glog.Errorln("Divided array had len 0")
 			break
 		}
 		err = tmpinserter.Put(ctx, i)
@@ -674,7 +675,7 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Debugln("done updating")
+	glog.V(1).Infoln("done updating")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintln(w, "Update successful")
@@ -688,7 +689,7 @@ func downloadRARC() (*inputROAArr, error) {
 	}
 	resp, err := client.Get(roaURL)
 	if err != nil {
-		log.Infof("failed attempting to download %q in downloadRARC, err: %v", roaURL, err)
+		glog.Infof("failed attempting to download %q in downloadRARC, err: %v", roaURL, err)
 		return &form, err
 	}
 	defer resp.Body.Close()
@@ -725,17 +726,17 @@ func downloadRARC() (*inputROAArr, error) {
 // ErrorHandler is a function to handle HTTP errors
 // copied from imgsrvr, slightly different formatting
 func ErrorHandler(resp http.ResponseWriter, req *http.Request, status int, alert string, err error) {
-	log.Errorln(err)
+	glog.Errorln(err)
 	resp.WriteHeader(status)
-	log.Error("artifical http error: ", status, alert)
+	glog.Error("artifical http error: ", status, alert)
 	fmt.Fprintf(resp, "<html><title>Error!</title><body>You have found an error! This error is of type %v. Built in alert: \n'%v',\n Would you like a <a href='https://http.cat/%v'>cat</a> or a <a href='https://httpstatusdogs.com/%v'>dog?</a></body></html>",
 		status, html.EscapeString(alert), status, status)
 }
 
 // TextErrorHandler handles HTTP errors for machine callers by returning plain text.
 func TextErrorHandler(w http.ResponseWriter, status int, alert string, err error) {
-	log.Errorln(err)
-	log.Error("artifical http error: ", status, alert)
+	glog.Errorln(err)
+	glog.Error("artifical http error: ", status, alert)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(status)
 	if err != nil {

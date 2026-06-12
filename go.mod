@@ -5,7 +5,7 @@ go 1.26
 require (
 	cloud.google.com/go/bigquery v1.77.0
 	github.com/gidoBOSSftw5731/Historical-ROA/proto v0.0.0-20210702005558-8adba536b954
-	github.com/gidoBOSSftw5731/log v0.0.0-20210527210830-1611311b4b64
+	github.com/golang/glog v1.2.5
 	github.com/shomali11/util v0.0.0-20200329021417-91c54758c87b
 	google.golang.org/api v0.280.0
 	google.golang.org/protobuf v1.36.11
