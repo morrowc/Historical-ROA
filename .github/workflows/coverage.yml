@@ -26,6 +26,7 @@ jobs:
       with:
         file: ./coverage.out
         fail_ci_if_error: false
+        token: ${{ secrets.CODECOV_TOKEN }}
         # Note: For public repositories, a token is generally not required,
         # but adding one is recommended by Codecov for rate limit reliability.
         # If this is a private repo, you MUST add a secret: ${{ secrets.CODECOV_TOKEN }}
