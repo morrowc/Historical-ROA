@@ -74,6 +74,9 @@ var (
 	projectLocation = "us-central2"
 	updateCooldown  = 50 * time.Minute
 	mergeOnCond     = "b.asn = arr.asn AND b.maxlen = arr.maxlen AND b.prefix = arr.prefix AND b.ta = arr.ta AND b.mask = arr.mask"
+	queryASN        = "SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr WHERE asn = @asn"
+	queryPrefix     = "SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr WHERE prefix = @prefix AND mask = @mask"
+	queryBoth       = "SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr WHERE asn = @asn AND prefix = @prefix AND mask = @mask"
 )
 
 func initBQClient(ctx context.Context) (*bigquery.Client, error) {
@@ -249,15 +252,12 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 	var query *bigquery.Query
 	switch {
 	case hasASN && !hasPrefix:
-		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr
-		WHERE asn = @asn`)
+		query = client.Query(queryASN)
 
 	case !hasASN && hasPrefix:
-		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr
-		WHERE prefix = @prefix AND mask = @mask`)
+		query = client.Query(queryPrefix)
 	case hasASN && hasPrefix:
-		query = client.Query(`SELECT asn, prefix, mask, maxlen, ta, inserttimes FROM public-routing-data-backup.historical.roas_arr
-		WHERE asn = @asn AND prefix = @prefix AND mask = @mask`)
+		query = client.Query(queryBoth)
 	}
 	query.Parameters = []bigquery.QueryParameter{
 		{

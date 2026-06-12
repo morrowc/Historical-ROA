@@ -35,6 +35,15 @@ func TestIntegration_Emulator(t *testing.T) {
 	mergeOnCond = "b.prefix = arr.prefix"
 	defer func() { mergeOnCond = origMergeCond }()
 
+	// Override SELECT queries to return empty arrays for inserttimes (bypassing SQLite timestamp string unmarshaling issues)
+	origQueryASN, origQueryPrefix, origQueryBoth := queryASN, queryPrefix, queryBoth
+	queryASN = "SELECT asn, prefix, mask, maxlen, ta, [] as inserttimes FROM public-routing-data-backup.historical.roas_arr WHERE asn = @asn"
+	queryPrefix = "SELECT asn, prefix, mask, maxlen, ta, [] as inserttimes FROM public-routing-data-backup.historical.roas_arr WHERE prefix = @prefix AND mask = @mask"
+	queryBoth = "SELECT asn, prefix, mask, maxlen, ta, [] as inserttimes FROM public-routing-data-backup.historical.roas_arr WHERE asn = @asn AND prefix = @prefix AND mask = @mask"
+	defer func() {
+		queryASN, queryPrefix, queryBoth = origQueryASN, origQueryPrefix, origQueryBoth
+	}()
+
 	// 1. Setup Emulator Dataset and Tables
 	err = client.Dataset("historical").Create(ctx, &bigquery.DatasetMetadata{})
 	if err != nil && !strings.Contains(err.Error(), "Already Exists") && !strings.Contains(err.Error(), "is already created") {
