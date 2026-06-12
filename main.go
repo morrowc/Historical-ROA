@@ -73,6 +73,7 @@ var (
 	// an endpoint that we know works properly, external to cloud.
 	projectLocation = "us-central2"
 	updateCooldown  = 50 * time.Minute
+	mergeOnCond     = "b.asn = arr.asn AND b.maxlen = arr.maxlen AND b.prefix = arr.prefix AND b.ta = arr.ta AND b.mask = arr.mask"
 )
 
 func initBQClient(ctx context.Context) (*bigquery.Client, error) {
@@ -656,16 +657,14 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 
 	// now make one plus one equal 2
 	// historical-roas.historical.roas_arr
-	query := client.Query(
+	query := client.Query(fmt.Sprintf(
 		`MERGE historical.roas_arr arr
  	 USING historical.buf b
-	    ON 	b.asn = arr.asn AND b.maxlen = arr.maxlen
-	   AND b.prefix = arr.prefix AND b.ta = arr.ta
-	   AND b.mask = arr.mask
+	    ON 	%s
 	  WHEN MATCHED THEN
  		UPDATE SET inserttimes = ARRAY_CONCAT(b.inserttimes, arr.inserttimes)
  	  WHEN NOT MATCHED BY TARGET THEN
-		INSERT (asn, maxlen, prefix, ta, mask, inserttimes) VALUES (b.asn, b.maxlen, b.prefix, b.ta, b.mask, b.inserttimes)`)
+		INSERT (asn, maxlen, prefix, ta, mask, inserttimes) VALUES (b.asn, b.maxlen, b.prefix, b.ta, b.mask, b.inserttimes)`, mergeOnCond))
 	job, err = query.Run(ctx)
 	if err != nil {
 		TextErrorHandler(w, 500, "Error running MERGE query", err)

@@ -30,6 +30,11 @@ func TestIntegration_Emulator(t *testing.T) {
 	updateCooldown = -1 * time.Second
 	defer func() { updateCooldown = origCooldown }()
 
+	// Override MERGE condition to single expression for emulator compatibility
+	origMergeCond := mergeOnCond
+	mergeOnCond = "b.prefix = arr.prefix"
+	defer func() { mergeOnCond = origMergeCond }()
+
 	// 1. Setup Emulator Dataset and Tables
 	err = client.Dataset("historical").Create(ctx, &bigquery.DatasetMetadata{})
 	if err != nil && !strings.Contains(err.Error(), "Already Exists") && !strings.Contains(err.Error(), "is already created") {
