@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -105,31 +106,105 @@ func hsts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type PageData struct {
+	ASN          string
+	Prefix       string
+	ParseCIDR    bool
+	HasResults   bool
+	Results      []*RenderedROA
+	ErrorMessage string
+}
+
+type RenderedROA struct {
+	ASN             string
+	FullPrefixRange string
+	TrustAnchor     string
+	DateRanges      []string
+	RFC3339Times    []string
+	UnixTimes       []int64
+}
+
+type dateRange struct {
+	start time.Time
+	end   time.Time
+}
+
+// computeAvailabilityRanges groups sorted observation timestamps into contiguous runs
+func computeAvailabilityRanges(times []time.Time, gapThreshold time.Duration) []string {
+	if len(times) == 0 {
+		return nil
+	}
+
+	var ranges []dateRange
+	current := dateRange{start: times[0], end: times[0]}
+
+	for i := 1; i < len(times); i++ {
+		t := times[i]
+		diff := t.Sub(current.end)
+		if diff <= gapThreshold {
+			current.end = t
+		} else {
+			ranges = append(ranges, current)
+			current = dateRange{start: t, end: t}
+		}
+	}
+	ranges = append(ranges, current)
+
+	var formatted []string
+	for _, r := range ranges {
+		startStr := r.start.Format("Jan 2 2006")
+		endStr := r.end.Format("Jan 2 2006")
+		if startStr == endStr {
+			formatted = append(formatted, startStr)
+		} else {
+			formatted = append(formatted, fmt.Sprintf("%s -> %s", startStr, endStr))
+		}
+	}
+	return formatted
+}
+
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	w.Header().Add("strict-transport-security", "max-age=2629800")
 
-	tmpl, err := template.ParseFiles("./index.html")
+	tmpl, err := template.New("index").Parse(indexHTML)
 	if err != nil {
 		log.Errorln(err)
 		return
 	}
 
-	if r.Method != http.MethodPost {
-		tmpl.Execute(w, nil)
+	rawASN := r.FormValue("asn")
+	rawPrefix := r.FormValue("prefix")
+	rawParseCIDR := r.FormValue("parsecidr")
+
+	// If no query criteria submitted at all, simply serve initial empty query card
+	if r.Method != http.MethodPost && rawASN == "" && rawPrefix == "" {
+		tmpl.Execute(w, PageData{})
+		return
+	}
+
+	normASN, err := normalizeASN(rawASN)
+	if err != nil {
+		ErrorHandler(w, r, http.StatusBadRequest, "Invalid ASN format", err)
+		return
+	}
+
+	normPrefix, err := normalizePrefix(rawPrefix)
+	if err != nil {
+		ErrorHandler(w, r, http.StatusBadRequest, "Invalid IP Prefix format", err)
 		return
 	}
 
 	input := inputROA{
-		Asn:       r.FormValue("asn"),
-		Prefix:    r.FormValue("prefix"),
-		ParseCIDR: r.FormValue("parsecidr"),
+		Asn:       normASN,
+		Prefix:    normPrefix,
+		ParseCIDR: rawParseCIDR,
 	}
 
-	if input.ParseCIDR != "" {
+	if input.ParseCIDR != "" && input.Prefix != "" {
 		_, n, err := net.ParseCIDR(input.Prefix)
 		if err != nil {
-			tmpl.Execute(w, nil)
+			ErrorHandler(w, r, http.StatusBadRequest, "Failed to parse CIDR", err)
 			return
 		}
 		input.Prefix = n.String()
@@ -148,6 +223,11 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 
 	if inputStore.Prefix != "" && inputStore.Subnet != 0 {
 		hasPrefix = true
+	}
+
+	if !hasASN && !hasPrefix {
+		ErrorHandler(w, r, http.StatusBadRequest, "Please provide either an ASN or an IP Prefix", errors.New("missing query criteria"))
+		return
 	}
 
 	log.Traceln(input)
@@ -185,7 +265,10 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 		ErrorHandler(w, r, 500, "Error with query", err)
 		return
 	}
+
 	var resultsarr pb.ResultArr
+	var pageResults []*RenderedROA
+
 	for {
 		var row []bigquery.Value
 		err := it.Next(&row)
@@ -196,6 +279,7 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 			ErrorHandler(w, r, 500, "Error with query", err)
 			return
 		}
+
 		var intime []time.Time
 		var buf = row[5].([]bigquery.Value)
 
@@ -203,17 +287,17 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 			intime = append(intime, t.(time.Time))
 		}
 
-		var results = pb.ResultsFromDB{
-			ASN:    row[0].(string),       // this
-			Prefix: row[1].(string),       // is
-			Mask:   int32(row[2].(int64)), // stupid
-			Maxlen: int32(row[3].(int64)), // I hate you,
-			Ta:     row[4].(string),       // Google
-		}
+		// Sort observation timestamps ascending for accurate range grouping
+		sort.Slice(intime, func(i, j int) bool {
+			return intime[i].Before(intime[j])
+		})
 
-		for _, i := range intime {
-			results.Unixtimearr = append(results.Unixtimearr, (i.Unix()))
-			results.RFC3339Timearr = append(results.RFC3339Timearr, i.Format(time.RFC3339))
+		var results = pb.ResultsFromDB{
+			ASN:    row[0].(string),
+			Prefix: row[1].(string),
+			Mask:   int32(row[2].(int64)),
+			Maxlen: int32(row[3].(int64)),
+			Ta:     row[4].(string),
 		}
 
 		results.Fullprefix = fmt.Sprintf("%v/%v", results.Prefix, results.Mask)
@@ -225,9 +309,107 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 			results.Fullprefixrange = fmt.Sprintf("%v/%v", results.Prefix, results.Mask)
 		}
 
+		var rfcTimes []string
+		var unixTimes []int64
+
+		for _, i := range intime {
+			unixVal := i.Unix()
+			rfcVal := i.Format(time.RFC3339)
+			results.Unixtimearr = append(results.Unixtimearr, unixVal)
+			results.RFC3339Timearr = append(results.RFC3339Timearr, rfcVal)
+
+			rfcTimes = append(rfcTimes, rfcVal)
+			unixTimes = append(unixTimes, unixVal)
+		}
+
 		resultsarr.Results = append(resultsarr.Results, &results)
+
+		// Group consistent observation ranges (using a 26-hour gap threshold to allow for minor Cron shifts)
+		dateRanges := computeAvailabilityRanges(intime, 26*time.Hour)
+
+		pageResults = append(pageResults, &RenderedROA{
+			ASN:             results.ASN,
+			FullPrefixRange: results.Fullprefixrange,
+			TrustAnchor:     results.Ta,
+			DateRanges:      dateRanges,
+			RFC3339Times:    rfcTimes,
+			UnixTimes:       unixTimes,
+		})
 	}
-	fmt.Fprintln(w, protojson.Format(&resultsarr))
+
+	// Requirement 6: URL parameter '?json' bypasses HTML formatting
+	if _, hasJSON := r.Form["json"]; hasJSON || r.URL.Query().Has("json") {
+		opts := protojson.MarshalOptions{Multiline: true, Indent: "  "}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(opts.Format(&resultsarr)))
+		return
+	}
+
+	// Render complete structured HTML results page
+	pData := PageData{
+		ASN:        rawASN,
+		Prefix:     rawPrefix,
+		ParseCIDR:  rawParseCIDR != "",
+		HasResults: true,
+		Results:    pageResults,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	tmpl.Execute(w, pData)
+}
+
+// normalizeASN validates and prepends AS to raw autonomous system number strings
+func normalizeASN(asn string) (string, error) {
+	asn = strings.TrimSpace(asn)
+	if asn == "" {
+		return "", nil
+	}
+
+	// If purely numeric, prepend AS
+	if _, err := strconv.Atoi(asn); err == nil {
+		return "AS" + asn, nil
+	}
+
+	// If starts with AS (case-insensitive) and followed by digits
+	upper := strings.ToUpper(asn)
+	if strings.HasPrefix(upper, "AS") {
+		if _, err := strconv.Atoi(upper[2:]); err == nil {
+			return upper, nil
+		}
+	}
+
+	return "", fmt.Errorf("invalid ASN format (expected numeric or AS####): %q", asn)
+}
+
+// normalizePrefix validates CIDR or automatically computes network for bare IP addresses
+func normalizePrefix(prefix string) (string, error) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return "", nil
+	}
+
+	// If a bare IP Address is provided, assume /24 or /48 and normalize to base network
+	if ip := net.ParseIP(prefix); ip != nil {
+		var mask string
+		if ip.To4() != nil {
+			mask = "/24"
+		} else {
+			mask = "/48"
+		}
+		_, n, err := net.ParseCIDR(prefix + mask)
+		if err != nil {
+			return "", fmt.Errorf("failed to compute CIDR for bare IP %q: %w", prefix, err)
+		}
+		return n.String(), nil
+	}
+
+	// Otherwise, verify it's a valid CIDR netblock
+	if _, _, err := net.ParseCIDR(prefix); err != nil {
+		return "", fmt.Errorf("invalid IP Prefix or CIDR netblock %q: %w", prefix, err)
+	}
+
+	return prefix, nil
 }
 
 // convert input data into stored data
