@@ -659,9 +659,9 @@ func pullToDB(w http.ResponseWriter, r *http.Request) {
 	query := client.Query(
 		`MERGE historical.roas_arr arr
  	 USING historical.buf b
-	    ON 	arr.asn = b.Asn AND arr.maxlen = b.MaxLength
-	   AND arr.prefix = b.Prefix AND arr.ta = b.Ta
-	   AND arr.mask = b.Subnet
+	    ON 	b.Asn = arr.asn AND b.MaxLength = arr.maxlen
+	   AND b.Prefix = arr.prefix AND b.Ta = arr.ta
+	   AND b.Subnet = arr.mask
 	  WHEN MATCHED THEN
  		UPDATE SET inserttimes = ARRAY_CONCAT(b.times, arr.inserttimes)
  	  WHEN NOT MATCHED BY TARGET THEN
