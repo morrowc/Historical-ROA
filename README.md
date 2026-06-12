@@ -1,5 +1,7 @@
 # Historical-ROA
 
+[![Codecov](https://img.shields.io/codecov/c/github/morrowc/Historical-ROA)](https://app.codecov.io/gh/morrowc/Historical-ROA)
+
 This repository contains a Google App Engine application designed to collect,
 archive, and serve historical Route Origin Authorizations (ROAs) data.
 
