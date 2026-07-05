@@ -1,3 +1,5 @@
+// Package main is the main web-server for handling user requests for Historical ROA
+// lookups. It also handles updates through a simple URL + auth scheme.
 package main
 
 import (
