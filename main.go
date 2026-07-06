@@ -72,8 +72,8 @@ var (
 var (
 	// The actual data is used at 'hotsed-routinator.rarc.net'. but that appears
 	// to not work well? Use the docs.as701.net proxy path instead.
-	// roaURL = "https://hosted-routinator.rarc.net/json"
-	roaURL = "https://docs.as701.net/roa/update/"
+	roaURL = "https://hosted-routinator-east.rarc.net/json"
+	// roaURL = "https://docs.as701.net/roa/update/"
 	// The above SHOULD work, it does not. Proxy the requests through
 	// an endpoint that we know works properly, external to cloud.
 	projectLocation = "us-central2"
